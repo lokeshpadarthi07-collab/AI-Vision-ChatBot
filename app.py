@@ -172,16 +172,28 @@ def add_message(role, kind, content):
 
 def ask_gemini(parts):
     try:
+        active_key = st.session_state.get("api_key") or GEMINI_API_KEY
+        client = get_gemini_client(active_key)
+        if client is None:
+            return "⚠️ Gemini API key is missing. Please provide it in secrets or on the onboarding screen."
+        
         if "chat" not in st.session_state or st.session_state.chat is None:
-            active_key = st.session_state.get("api_key") or GEMINI_API_KEY
-            if not active_key or active_key.startswith("your-"):
-                return "⚠️ Gemini API key is missing. Please provide it in secrets or on the onboarding screen."
-            client = genai.Client(api_key=active_key)
             st.session_state.chat = client.chats.create(
                 model=st.session_state.get("model_used", "gemini-2.0-flash"),
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
-        return st.session_state.chat.send_message(parts).text
+            
+        try:
+            return st.session_state.chat.send_message(parts).text
+        except Exception as send_err:
+            # If client was closed, recreate chat from cached client and retry
+            if "closed" in str(send_err).lower():
+                st.session_state.chat = client.chats.create(
+                    model=st.session_state.get("model_used", "gemini-2.0-flash"),
+                    config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+                )
+                return st.session_state.chat.send_message(parts).text
+            raise send_err
     except Exception as error:
         return f"Sorry, something went wrong: {error}"
 
@@ -269,10 +281,13 @@ if "onboarded" not in st.session_state:
                 st.session_state.email_address = email_address.strip() if email_address else ""
                 st.session_state.api_key = active_key
                 
-                # Test the key and initialize Gemini chat session
+                # Test the key and initialize Gemini chat session using cached client
                 try:
-                    client = genai.Client(api_key=active_key)
-                    # Try gemini-2.0-flash / gemini-1.5-flash / gemini-2.5-flash
+                    client = get_gemini_client(active_key)
+                    if client is None:
+                        st.error("Invalid API key provided.")
+                        st.stop()
+                    # Try gemini-2.0-flash / gemini-1.5-flash
                     try:
                         st.session_state.chat = client.chats.create(
                             model="gemini-2.0-flash",
