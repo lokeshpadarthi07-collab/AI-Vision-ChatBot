@@ -173,24 +173,16 @@ def add_message(role, kind, content):
 def ask_gemini(parts):
     try:
         if "chat" not in st.session_state or st.session_state.chat is None:
-            if gemini_client is None:
-                return "⚠️ Gemini API key is missing. Please add your GEMINI_API_KEY in `.streamlit/secrets.toml` or via the sidebar."
-            st.session_state.chat = gemini_client.chats.create(
-                model=MODEL_NAME,
+            active_key = st.session_state.get("api_key") or GEMINI_API_KEY
+            if not active_key or active_key.startswith("your-"):
+                return "⚠️ Gemini API key is missing. Please provide it in secrets or on the onboarding screen."
+            client = genai.Client(api_key=active_key)
+            st.session_state.chat = client.chats.create(
+                model=st.session_state.get("model_used", "gemini-2.0-flash"),
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
         return st.session_state.chat.send_message(parts).text
     except Exception as error:
-        err_msg = str(error)
-        if "404" in err_msg or "not found" in err_msg.lower():
-            try:
-                st.session_state.chat = gemini_client.chats.create(
-                    model="gemini-2.0-flash",
-                    config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-                )
-                return st.session_state.chat.send_message(parts).text
-            except Exception as inner_err:
-                return f"Sorry, something went wrong: {inner_err}"
         return f"Sorry, something went wrong: {error}"
 
 
@@ -241,9 +233,6 @@ if "onboarded" not in st.session_state:
     st.markdown('<div class="main-header">🥗 MacroSnap</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-caption">Snap it. Track it. Text yourself the results.</div>', unsafe_allow_html=True)
 
-    if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("your-"):
-        st.info("💡 **Quick Setup**: Add your `GEMINI_API_KEY` in `.streamlit/secrets.toml` or open the left sidebar to paste it.")
-
     with st.form("onboarding_form"):
         name = st.text_input("Your name", placeholder="e.g. Alex")
         whatsapp_number = st.text_input(
@@ -256,33 +245,52 @@ if "onboarded" not in st.session_state:
             placeholder="you@example.com",
             help="Optional: Receive your nutrition summary via Email as well.",
         )
+        
+        # Prominent API Key input on the form
+        default_key_val = "" if GEMINI_API_KEY.startswith("your-") else GEMINI_API_KEY
+        form_api_key = st.text_input(
+            "Google Gemini API Key",
+            value=default_key_val,
+            type="password",
+            placeholder="AIzaSy...",
+            help="Get your free key from https://aistudio.google.com/apikey",
+        )
+        
         submitted = st.form_submit_button("Let's go 🚀")
         if submitted:
+            active_key = (form_api_key or GEMINI_API_KEY).strip().strip('"').strip("'")
             if not name.strip() or not whatsapp_number.strip():
                 st.warning("Please fill in both your name and WhatsApp number.")
-            elif not GEMINI_API_KEY or GEMINI_API_KEY.startswith("your-"):
-                st.error("Please provide a valid Gemini API key in `.streamlit/secrets.toml` or in the sidebar.")
+            elif not active_key or active_key.startswith("your-") or len(active_key) < 10:
+                st.error("⚠️ Please enter a valid Gemini API key. Get one for free at https://aistudio.google.com/apikey")
             else:
                 st.session_state.name = name.strip()
                 st.session_state.whatsapp_number = whatsapp_number.strip()
                 st.session_state.email_address = email_address.strip() if email_address else ""
+                st.session_state.api_key = active_key
                 
-                # Initialize Gemini chat session
-                client = get_gemini_client(GEMINI_API_KEY)
+                # Test the key and initialize Gemini chat session
                 try:
-                    st.session_state.chat = client.chats.create(
-                        model=MODEL_NAME,
-                        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-                    )
-                except Exception:
-                    st.session_state.chat = client.chats.create(
-                        model="gemini-2.0-flash",
-                        config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
-                    )
-                
-                st.session_state.messages = []
-                st.session_state.onboarded = True
-                st.rerun()
+                    client = genai.Client(api_key=active_key)
+                    # Try gemini-2.0-flash / gemini-1.5-flash / gemini-2.5-flash
+                    try:
+                        st.session_state.chat = client.chats.create(
+                            model="gemini-2.0-flash",
+                            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+                        )
+                        st.session_state.model_used = "gemini-2.0-flash"
+                    except Exception:
+                        st.session_state.chat = client.chats.create(
+                            model="gemini-1.5-flash",
+                            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+                        )
+                        st.session_state.model_used = "gemini-1.5-flash"
+                    
+                    st.session_state.messages = []
+                    st.session_state.onboarded = True
+                    st.rerun()
+                except Exception as ex:
+                    st.error(f"❌ Could not connect with this Gemini API key: {ex}\n\nPlease make sure you copied the full key from https://aistudio.google.com/apikey")
     st.stop()
 
 
