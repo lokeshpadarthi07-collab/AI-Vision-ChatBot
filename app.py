@@ -17,8 +17,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# Model configuration (gemini-flash-latest)
-MODEL_NAME = "gemini-flash-latest"
+# Model configuration (gemini-3.8-flash)
+MODEL_NAME = "gemini-3.8-flash"
 
 # Helper to retrieve configuration from st.secrets or os.environ
 def get_secret(key, default=""):
@@ -179,7 +179,7 @@ def ask_gemini(parts):
         
         if "chat" not in st.session_state or st.session_state.chat is None:
             st.session_state.chat = client.chats.create(
-                model=st.session_state.get("model_used", "gemini-flash-latest"),
+                model=st.session_state.get("model_used", MODEL_NAME),
                 config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
             )
             
@@ -189,7 +189,7 @@ def ask_gemini(parts):
             # If client was closed, recreate chat from cached client and retry
             if "closed" in str(send_err).lower():
                 st.session_state.chat = client.chats.create(
-                    model=st.session_state.get("model_used", "gemini-flash-latest"),
+                    model=st.session_state.get("model_used", MODEL_NAME),
                     config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
                 )
                 return st.session_state.chat.send_message(parts).text
@@ -287,12 +287,12 @@ if "onboarded" not in st.session_state:
                     if client is None:
                         st.error("Invalid API key provided.")
                         st.stop()
-                    # Initialize chat with gemini-flash-latest
+                    # Initialize chat with gemini-3.8-flash
                     st.session_state.chat = client.chats.create(
-                        model="gemini-flash-latest",
+                        model=MODEL_NAME,
                         config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
                     )
-                    st.session_state.model_used = "gemini-flash-latest"
+                    st.session_state.model_used = MODEL_NAME
                     
                     st.session_state.messages = []
                     st.session_state.onboarded = True
